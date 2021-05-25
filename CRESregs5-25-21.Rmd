@@ -1,0 +1,23 @@
+---
+title: "Regression"
+author: "Blain Morin"
+date: "5/25/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(RSQLite)
+
+```
+
+
+```{r}
+
+conn = dbConnect(RSQLite::SQLite(), "puco.db")
+
+
+
+```
