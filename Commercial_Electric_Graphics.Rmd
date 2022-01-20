@@ -1,0 +1,664 @@
+---
+title: "Commercial Electric Plots"
+author: "Blain Morin"
+date: "1/20/2022"
+output: html_document
+---
+
+# Updates
+
+* Added Duke and DP&L
+
+* Added a summary table to the end of the document
+
+
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, cache = TRUE)
+library(tidyverse)
+library(gridExtra)
+library(kableExtra)
+library(knitr)
+library(lubridate)
+library(plotly)
+library(RSQLite)
+library(RColorBrewer)
+library(readr)
+
+```
+
+
+```{r}
+
+
+### Need to put your OneDrive path here
+userpath = 'C:\\Users\\blain\\OneDrive - The Ohio State University\\Deregulation Research\\'
+
+
+### Pull electric offers out of database
+conn = dbConnect(RSQLite::SQLite(), paste0(userpath,'\\Deregulation Research\\CRES Offers\\puco.db'))
+electric = dbGetQuery(conn, "SELECT * FROM Responses WHERE MeasurementText = 'kWh'")
+dbDisconnect(conn = conn)
+
+
+
+### Pull electric offers out of database 2021
+conn = dbConnect(RSQLite::SQLite(), paste0(userpath,'\\Deregulation Research\\CRES Offers\\puco-2021.db'))
+electric2021 = dbGetQuery(conn, "SELECT * FROM Responses WHERE MeasurementText = 'kWh'")
+dbDisconnect(conn = conn)
+
+### Combine the orginal CRES offers with the 2021 data
+
+electric = rbind(electric, electric2021)
+rm(electric2021)
+
+
+
+```
+
+
+# AEP-CSP
+
+```{r, fig.height=8, fig.width=12}
+
+AEP = electric %>%
+  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+  mutate(Offer_Date = ymd(Offer_Date)) %>%
+  mutate(ContractTerms = as.factor(ContractTerms)) %>%
+  filter(TerritoryName == "American Electric Power") %>%
+  filter(refRateCode == "Small Commercial") %>%
+  filter(refRateType == "Fixed") %>%
+  filter(ContractTerms %in% c(12, 24))
+
+PTC = read_csv("PTC_com.csv")
+
+df = PTC %>%
+  select(Date, AEPCSP) %>%
+  mutate(Date = ym(Date)) %>%
+  mutate(matchdate = format(Date, "%m/%Y")) %>%
+  select(matchdate, AEPCSP)
+
+AEP = AEP %>%
+  mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
+AEP = AEP %>% 
+  left_join(df)
+
+df2 = AEP %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  summarize(Min = min(Price),
+            "5%" = quantile(Price, probs = .05),
+            q1 = quantile(Price, probs = .25),
+            Mean = mean(Price),
+            Median = median(Price),
+            q3 = quantile(Price, probs = .75),
+            Max = max(Price),
+            PTC = mean(AEPCSP)/100) %>%
+  ungroup()
+
+AEP.work = df2 %>%
+  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
+  mutate(sso_more_better = df2$`5%` / df2$PTC)
+
+temp = AEP.work %>% 
+  group_by(ContractTerms) %>%
+  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
+
+temp2 = AEP.work %>%
+  filter(sso_better == 1) %>%
+  group_by(ContractTerms) %>%
+  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
+
+AEPCSP.table = data.frame(Contract.Length = temp$ContractTerms,
+                       sso.better = temp$sso.better,
+                       sso.how.better = temp2$how.better)
+
+df2 = df2 %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  gather(Offer, Price, Min:PTC) %>%
+  filter(Price != 9999)
+
+mycolors = brewer.pal(8, name = 'Spectral')
+mycolors[5] = "purple"
+
+df2$Offer = factor(df2$Offer, levels = c("Min", "5%", "q1", "Mean", "PTC", "Median", "q3", "Max"))
+
+g = df2 %>%
+  filter(Price < .1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_line(aes(color = Offer)) +
+  facet_wrap(~ContractTerms) +
+  scale_x_date(date_minor_breaks = "1 year") +
+  scale_color_manual(name = "Offer", values = mycolors) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) +
+  xlab("Date") +
+  ylab("kwh") 
+
+
+ggplotly(g)
+
+```
+
+# AEP-OP
+
+```{r, fig.height=8, fig.width=12}
+
+AEP = electric %>%
+  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+  mutate(Offer_Date = ymd(Offer_Date)) %>%
+  mutate(ContractTerms = as.factor(ContractTerms)) %>%
+  filter(TerritoryName == "American Electric Power") %>%
+  filter(refRateCode == "Small Commercial") %>%
+  filter(refRateType == "Fixed") %>%
+  filter(ContractTerms %in% c(12, 24))
+
+PTC = read_csv("PTC_com.csv")
+
+df = PTC %>%
+  select(Date, AEPOP) %>%
+  mutate(Date = ym(Date)) %>%
+  mutate(matchdate = format(Date, "%m/%Y")) %>%
+  select(matchdate, AEPOP)
+
+AEP = AEP %>%
+  mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
+AEP = AEP %>% 
+  left_join(df)
+
+df2 = AEP %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  summarize(Min = min(Price),
+            "5%" = quantile(Price, probs = .05),
+            q1 = quantile(Price, probs = .25),
+            Mean = mean(Price),
+            Median = median(Price),
+            q3 = quantile(Price, probs = .75),
+            Max = max(Price),
+            PTC = mean(AEPOP)/100) %>%
+  ungroup()
+
+AEP.work = df2 %>%
+  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
+  mutate(sso_more_better = df2$`5%` / df2$PTC)
+
+temp = AEP.work %>% 
+  group_by(ContractTerms) %>%
+  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
+
+temp2 = AEP.work %>%
+  filter(sso_better == 1) %>%
+  group_by(ContractTerms) %>%
+  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
+
+AEPOP.table = data.frame(Contract.Length = temp$ContractTerms,
+                       sso.better = temp$sso.better,
+                       sso.how.better = temp2$how.better)
+
+df2 = df2 %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  gather(Offer, Price, Min:PTC) %>%
+  filter(Price != 9999)
+
+mycolors = brewer.pal(8, name = 'Spectral')
+mycolors[5] = "purple"
+
+df2$Offer = factor(df2$Offer, levels = c("Min", "5%", "q1", "Mean", "PTC", "Median", "q3", "Max"))
+
+g = df2 %>%
+  filter(Price < .1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_line(aes(color = Offer)) +
+  facet_wrap(~ContractTerms) +
+  scale_x_date(date_minor_breaks = "1 year") +
+  scale_color_manual(name = "Offer", values = mycolors) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) +
+  xlab("Date") +
+  ylab("kwh")
+
+
+ggplotly(g)
+
+```
+
+
+# FE-CEI
+
+```{r, fig.height=8, fig.width=12}
+
+AEP = electric %>%
+  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+  mutate(Offer_Date = ymd(Offer_Date)) %>%
+  mutate(ContractTerms = as.factor(ContractTerms)) %>%
+  filter(TerritoryName == "The Illuminating Company") %>%
+  filter(refRateCode == "Small Commercial") %>%
+  filter(refRateType == "Fixed") %>%
+  filter(ContractTerms %in% c(12, 24))
+
+PTC = read_csv("PTC_com.csv")
+
+df = PTC %>%
+  select(Date, FECEI) %>%
+  mutate(Date = ym(Date)) %>%
+  mutate(matchdate = format(Date, "%m/%Y")) %>%
+  select(matchdate, FECEI)
+
+AEP = AEP %>%
+  mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
+AEP = AEP %>% 
+  left_join(df)
+
+df2 = AEP %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  summarize(Min = min(Price),
+            "5%" = quantile(Price, probs = .05),
+            q1 = quantile(Price, probs = .25),
+            Mean = mean(Price),
+            Median = median(Price),
+            q3 = quantile(Price, probs = .75),
+            Max = max(Price),
+            PTC = mean(FECEI)/100) %>%
+  ungroup()
+
+FECEI.work = df2 %>%
+  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
+  mutate(sso_more_better = df2$`5%` / df2$PTC)
+
+temp = FECEI.work %>% 
+  group_by(ContractTerms) %>%
+  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
+
+temp2 = FECEI.work %>%
+  filter(sso_better == 1) %>%
+  group_by(ContractTerms) %>%
+  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
+
+FECEI.table = data.frame(Contract.Length = temp$ContractTerms,
+                       sso.better = temp$sso.better,
+                       sso.how.better = temp2$how.better)
+
+df2 = df2 %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  gather(Offer, Price, Min:PTC) %>%
+  filter(Price != 9999)
+
+mycolors = brewer.pal(8, name = 'Spectral')
+mycolors[5] = "purple"
+
+df2$Offer = factor(df2$Offer, levels = c("Min", "5%", "q1", "Mean", "PTC", "Median", "q3", "Max"))
+
+g = df2 %>%
+  filter(Price < .1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_line(aes(color = Offer)) +
+  facet_wrap(~ContractTerms) +
+  scale_x_date(date_minor_breaks = "1 year") +
+  scale_color_manual(name = "Offer", values = mycolors) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) +
+  xlab("Date") +
+  ylab("kwh") 
+
+
+ggplotly(g)
+
+```
+
+
+
+# FE-OE
+
+```{r, fig.height=8, fig.width=12}
+
+AEP = electric %>%
+  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+  mutate(Offer_Date = ymd(Offer_Date)) %>%
+  mutate(ContractTerms = as.factor(ContractTerms)) %>%
+  filter(TerritoryName == "Ohio Edison") %>%
+  filter(refRateCode == "Small Commercial") %>%
+  filter(refRateType == "Fixed") %>%
+  filter(ContractTerms %in% c(12, 24))
+
+PTC = read_csv("PTC_com.csv")
+
+df = PTC %>%
+  select(Date, FEOE) %>%
+  mutate(Date = ym(Date)) %>%
+  mutate(matchdate = format(Date, "%m/%Y")) %>%
+  select(matchdate, FEOE)
+
+AEP = AEP %>%
+  mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
+AEP = AEP %>% 
+  left_join(df)
+
+df2 = AEP %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  summarize(Min = min(Price),
+            "5%" = quantile(Price, probs = .05),
+            q1 = quantile(Price, probs = .25),
+            Mean = mean(Price),
+            Median = median(Price),
+            q3 = quantile(Price, probs = .75),
+            Max = max(Price),
+            PTC = mean(FEOE)/100) %>%
+  ungroup()
+
+FEOE.work = df2 %>%
+  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
+  mutate(sso_more_better = df2$`5%` / df2$PTC)
+
+temp = FEOE.work %>% 
+  group_by(ContractTerms) %>%
+  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
+
+temp2 = FEOE.work %>%
+  filter(sso_better == 1) %>%
+  group_by(ContractTerms) %>%
+  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
+
+FEOE.table = data.frame(Contract.Length = temp$ContractTerms,
+                       sso.better = temp$sso.better,
+                       sso.how.better = temp2$how.better)
+
+df2 = df2 %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  gather(Offer, Price, Min:PTC) %>%
+  filter(Price != 9999)
+
+mycolors = brewer.pal(8, name = 'Spectral')
+mycolors[5] = "purple"
+
+df2$Offer = factor(df2$Offer, levels = c("Min", "5%", "q1", "Mean", "PTC", "Median", "q3", "Max"))
+
+g = df2 %>%
+  filter(Price < .1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_line(aes(color = Offer)) +
+  facet_wrap(~ContractTerms) +
+  scale_x_date(date_minor_breaks = "1 year") +
+  scale_color_manual(name = "Offer", values = mycolors) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) +
+  xlab("Date") +
+  ylab("kwh") 
+
+
+ggplotly(g)
+
+```
+
+
+# FE-TE
+
+```{r, fig.height=8, fig.width=12}
+
+AEP = electric %>%
+  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+  mutate(Offer_Date = ymd(Offer_Date)) %>%
+  mutate(ContractTerms = as.factor(ContractTerms)) %>%
+  filter(TerritoryName == "Toledo Edison") %>%
+  filter(refRateCode == "Small Commercial") %>%
+  filter(refRateType == "Fixed") %>%
+  filter(ContractTerms %in% c(12, 24))
+
+PTC = read_csv("PTC_com.csv")
+
+df = PTC %>%
+  select(Date, FETE) %>%
+  mutate(Date = ym(Date)) %>%
+  mutate(matchdate = format(Date, "%m/%Y")) %>%
+  select(matchdate, FETE)
+
+AEP = AEP %>%
+  mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
+AEP = AEP %>% 
+  left_join(df)
+
+df2 = AEP %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  summarize(Min = min(Price),
+            "5%" = quantile(Price, probs = .05),
+            q1 = quantile(Price, probs = .25),
+            Mean = mean(Price),
+            Median = median(Price),
+            q3 = quantile(Price, probs = .75),
+            Max = max(Price),
+            PTC = mean(FETE)/100) %>%
+  ungroup()
+
+FETE.work = df2 %>%
+  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
+  mutate(sso_more_better = df2$`5%` / df2$PTC)
+
+temp = FETE.work %>% 
+  group_by(ContractTerms) %>%
+  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
+
+temp2 = FETE.work %>%
+  filter(sso_better == 1) %>%
+  group_by(ContractTerms) %>%
+  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
+
+FETE.table = data.frame(Contract.Length = temp$ContractTerms,
+                       sso.better = temp$sso.better,
+                       sso.how.better = temp2$how.better)
+
+df2 = df2 %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  gather(Offer, Price, Min:PTC) %>%
+  filter(Price != 9999)
+
+mycolors = brewer.pal(8, name = 'Spectral')
+mycolors[5] = "purple"
+
+df2$Offer = factor(df2$Offer, levels = c("Min", "5%", "q1", "Mean", "PTC", "Median", "q3", "Max"))
+
+g = df2 %>%
+  filter(Price < .1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_line(aes(color = Offer)) +
+  facet_wrap(~ContractTerms) +
+  scale_x_date(date_minor_breaks = "1 year") +
+  scale_color_manual(name = "Offer", values = mycolors) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) +
+  xlab("Date") +
+  ylab("kwh") 
+
+
+ggplotly(g)
+
+```
+
+
+# DUKE
+
+```{r, fig.height=8, fig.width=12}
+
+AEP = electric %>%
+  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+  mutate(Offer_Date = ymd(Offer_Date)) %>%
+  mutate(ContractTerms = as.factor(ContractTerms)) %>%
+  filter(TerritoryName == "Duke Energy Ohio") %>%
+  filter(refRateCode == "Small Commercial") %>%
+  filter(refRateType == "Fixed") %>%
+  filter(ContractTerms %in% c(12, 24))
+
+PTC = read_csv("PTC_com.csv")
+
+df = PTC %>%
+  select(Date, DUKE) %>%
+  mutate(Date = ym(Date)) %>%
+  mutate(matchdate = format(Date, "%m/%Y")) %>%
+  select(matchdate, DUKE)
+
+AEP = AEP %>%
+  mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
+AEP = AEP %>% 
+  left_join(df)
+
+df2 = AEP %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  summarize(Min = min(Price),
+            "5%" = quantile(Price, probs = .05),
+            q1 = quantile(Price, probs = .25),
+            Mean = mean(Price),
+            Median = median(Price),
+            q3 = quantile(Price, probs = .75),
+            Max = max(Price),
+            PTC = mean(DUKE)/100) %>%
+  ungroup()
+
+DUKE.work = df2 %>%
+  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
+  mutate(sso_more_better = df2$`5%` / df2$PTC)
+
+temp = DUKE.work %>% 
+  group_by(ContractTerms) %>%
+  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
+
+temp2 = DUKE.work %>%
+  filter(sso_better == 1) %>%
+  group_by(ContractTerms) %>%
+  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
+
+DUKE.table = data.frame(Contract.Length = temp$ContractTerms,
+                       sso.better = temp$sso.better,
+                       sso.how.better = temp2$how.better)
+
+df2 = df2 %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  gather(Offer, Price, Min:PTC) %>%
+  filter(Price != 9999)
+
+mycolors = brewer.pal(8, name = 'Spectral')
+mycolors[5] = "purple"
+
+df2$Offer = factor(df2$Offer, levels = c("Min", "5%", "q1", "Mean", "PTC", "Median", "q3", "Max"))
+
+g = df2 %>%
+  filter(Price < .1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_line(aes(color = Offer)) +
+  facet_wrap(~ContractTerms) +
+  scale_x_date(date_minor_breaks = "1 year") +
+  scale_color_manual(name = "Offer", values = mycolors) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) +
+  xlab("Date") +
+  ylab("kwh") 
+
+
+ggplotly(g)
+
+```
+
+# DP&L
+
+```{r, fig.height=8, fig.width=12}
+
+AEP = electric %>%
+  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+  mutate(Offer_Date = ymd(Offer_Date)) %>%
+  mutate(ContractTerms = as.factor(ContractTerms)) %>%
+  filter(TerritoryName == "Dayton Power & Light") %>%
+  filter(refRateCode == "Small Commercial") %>%
+  filter(refRateType == "Fixed") %>%
+  filter(ContractTerms %in% c(12, 24))
+
+PTC = read_csv("PTC_com.csv")
+
+df = PTC %>%
+  select(Date, DPL) %>%
+  mutate(Date = ym(Date)) %>%
+  mutate(matchdate = format(Date, "%m/%Y")) %>%
+  select(matchdate, DPL)
+
+AEP = AEP %>%
+  mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
+AEP = AEP %>% 
+  left_join(df)
+
+df2 = AEP %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  summarize(Min = min(Price),
+            "5%" = quantile(Price, probs = .05),
+            q1 = quantile(Price, probs = .25),
+            Mean = mean(Price),
+            Median = median(Price),
+            q3 = quantile(Price, probs = .75),
+            Max = max(Price),
+            PTC = mean(DPL)/100) %>%
+  ungroup()
+
+DPL.work = df2 %>%
+  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
+  mutate(sso_more_better = df2$`5%` / df2$PTC)
+
+temp = DPL.work %>% 
+  group_by(ContractTerms) %>%
+  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
+
+temp2 = DPL.work %>%
+  filter(sso_better == 1) %>%
+  group_by(ContractTerms) %>%
+  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
+
+DPL.table = data.frame(Contract.Length = temp$ContractTerms,
+                       sso.better = temp$sso.better,
+                       sso.how.better = temp2$how.better)
+
+df2 = df2 %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  gather(Offer, Price, Min:PTC) %>%
+  filter(Price != 9999)
+
+mycolors = brewer.pal(8, name = 'Spectral')
+mycolors[5] = "purple"
+
+df2$Offer = factor(df2$Offer, levels = c("Min", "5%", "q1", "Mean", "PTC", "Median", "q3", "Max"))
+
+g = df2 %>%
+  filter(Price < .1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_line(aes(color = Offer)) +
+  facet_wrap(~ContractTerms) +
+  scale_x_date(date_minor_breaks = "1 year") +
+  scale_color_manual(name = "Offer", values = mycolors) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) +
+  xlab("Date") +
+  ylab("kwh") 
+
+
+ggplotly(g)
+
+```
+
+# Summary Table 
+
+
+```{r}
+
+
+
+```
+
+
+
