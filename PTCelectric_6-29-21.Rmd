@@ -1,19 +1,9 @@
 ---
-title: "Commercial Electric Plots"
+title: "Price-to-Compare Electric Graphics"
 author: "Blain Morin"
-date: "1/20/2022"
+date: "6/29/2021"
 output: html_document
 ---
-
-# Updates
-
-* Added Duke and DP&L
-
-* Added a summary table to the end of the document
-
-* Added 6 month offers, there is some strangeness in the plots for these offers due to the way these series are plotted (the weirdness comes from no new offers during certain periods)
-
-
 
 ```{r setup, include=FALSE}
 
@@ -33,56 +23,36 @@ library(readr)
 
 ```{r}
 
+conn = dbConnect(RSQLite::SQLite(), "puco.db")
 
-### Need to put your OneDrive path here
-userpath = 'C:\\Users\\blain\\OneDrive - The Ohio State University\\Deregulation Research\\'
+test = dbGetQuery(conn, "SELECT * FROM Responses WHERE ContractTerms in (3, 12, 24) AND refRateType = 'Fixed' and MeasurementText = 'kWh' AND refRateCode = 'Residential' ")
 
-
-### Pull electric offers out of database
-conn = dbConnect(RSQLite::SQLite(), paste0(userpath,'\\Deregulation Research\\CRES Offers\\puco.db'))
-electric = dbGetQuery(conn, "SELECT * FROM Responses WHERE MeasurementText = 'kWh'")
-dbDisconnect(conn = conn)
-
-
-
-### Pull electric offers out of database 2021
-conn = dbConnect(RSQLite::SQLite(), paste0(userpath,'\\Deregulation Research\\CRES Offers\\puco-2021.db'))
-electric2021 = dbGetQuery(conn, "SELECT * FROM Responses WHERE MeasurementText = 'kWh'")
-dbDisconnect(conn = conn)
-
-### Combine the orginal CRES offers with the 2021 data
-
-electric = rbind(electric, electric2021)
-rm(electric2021)
-
-
+dbDisconnect(conn)
 
 ```
-
 
 # AEP-CSP
 
 ```{r, fig.height=8, fig.width=12}
 
-AEP = electric %>%
-  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+AEP = test %>%
+  mutate(Offer_Date = substring(test$PublishDate, 1, 10)) %>%
   mutate(Offer_Date = ymd(Offer_Date)) %>%
   mutate(ContractTerms = as.factor(ContractTerms)) %>%
-  filter(TerritoryName == "American Electric Power") %>%
-  filter(refRateCode == "Small Commercial") %>%
-  filter(refRateType == "Fixed") %>%
-  filter(ContractTerms %in% c(6, 12, 24))
+  filter(TerritoryName == "American Electric Power")
 
-PTC = read_csv("PTC_com.csv")
+
+PTC = read_csv("PTC.csv")
 
 df = PTC %>%
   select(Date, AEPCSP) %>%
-  mutate(Date = ym(Date)) %>%
+  mutate(Date = mdy(Date)) %>%
   mutate(matchdate = format(Date, "%m/%Y")) %>%
   select(matchdate, AEPCSP)
 
 AEP = AEP %>%
   mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
 
 AEP = AEP %>% 
   left_join(df)
@@ -97,27 +67,6 @@ df2 = AEP %>%
             q3 = quantile(Price, probs = .75),
             Max = max(Price),
             PTC = mean(AEPCSP)/100) %>%
-  ungroup()
-
-AEP.work = df2 %>%
-  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
-  mutate(sso_more_better = df2$`5%` / df2$PTC)
-
-temp = AEP.work %>% 
-  group_by(ContractTerms) %>%
-  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
-
-temp2 = AEP.work %>%
-  filter(sso_better == 1) %>%
-  group_by(ContractTerms) %>%
-  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
-
-AEPCSP.table = data.frame(Contract.Length = temp$ContractTerms,
-                       sso.better = temp$sso.better,
-                       sso.how.better = temp2$how.better)
-
-df2 = df2 %>%
-  group_by(Offer_Date, ContractTerms) %>%
   gather(Offer, Price, Min:PTC) %>%
   filter(Price != 9999)
 
@@ -137,7 +86,8 @@ g = df2 %>%
   theme(strip.background =element_rect(fill="black")) +
   theme(strip.text = element_text(colour = 'white')) +
   xlab("Date") +
-  ylab("kwh") 
+  ylab("kwh") +
+  ggtitle("AEP-CSP Residential, With PTC")
 
 
 ggplotly(g)
@@ -148,25 +98,24 @@ ggplotly(g)
 
 ```{r, fig.height=8, fig.width=12}
 
-AEP = electric %>%
-  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+AEP = test %>%
+  mutate(Offer_Date = substring(test$PublishDate, 1, 10)) %>%
   mutate(Offer_Date = ymd(Offer_Date)) %>%
   mutate(ContractTerms = as.factor(ContractTerms)) %>%
-  filter(TerritoryName == "American Electric Power") %>%
-  filter(refRateCode == "Small Commercial") %>%
-  filter(refRateType == "Fixed") %>%
-  filter(ContractTerms %in% c(6, 12, 24))
+  filter(TerritoryName == "American Electric Power")
 
-PTC = read_csv("PTC_com.csv")
+
+PTC = read_csv("PTC.csv")
 
 df = PTC %>%
   select(Date, AEPOP) %>%
-  mutate(Date = ym(Date)) %>%
+  mutate(Date = mdy(Date)) %>%
   mutate(matchdate = format(Date, "%m/%Y")) %>%
   select(matchdate, AEPOP)
 
 AEP = AEP %>%
   mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
 
 AEP = AEP %>% 
   left_join(df)
@@ -181,27 +130,6 @@ df2 = AEP %>%
             q3 = quantile(Price, probs = .75),
             Max = max(Price),
             PTC = mean(AEPOP)/100) %>%
-  ungroup()
-
-AEP.work = df2 %>%
-  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
-  mutate(sso_more_better = df2$`5%` / df2$PTC)
-
-temp = AEP.work %>% 
-  group_by(ContractTerms) %>%
-  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
-
-temp2 = AEP.work %>%
-  filter(sso_better == 1) %>%
-  group_by(ContractTerms) %>%
-  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
-
-AEPOP.table = data.frame(Contract.Length = temp$ContractTerms,
-                       sso.better = temp$sso.better,
-                       sso.how.better = temp2$how.better)
-
-df2 = df2 %>%
-  group_by(Offer_Date, ContractTerms) %>%
   gather(Offer, Price, Min:PTC) %>%
   filter(Price != 9999)
 
@@ -221,37 +149,39 @@ g = df2 %>%
   theme(strip.background =element_rect(fill="black")) +
   theme(strip.text = element_text(colour = 'white')) +
   xlab("Date") +
-  ylab("kwh")
+  ylab("kwh") +
+  ggtitle("AEP-OP Residential, With PTC")
 
 
 ggplotly(g)
 
 ```
 
-
 # FE-CEI
+
+* Using the "Illuminating Company" as the territory for the CRES offers
+* There are some high maximum values that pull the mean up, but get cut out of the y-axis bounds
 
 ```{r, fig.height=8, fig.width=12}
 
-AEP = electric %>%
-  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+AEP = test %>%
+  mutate(Offer_Date = substring(test$PublishDate, 1, 10)) %>%
   mutate(Offer_Date = ymd(Offer_Date)) %>%
   mutate(ContractTerms = as.factor(ContractTerms)) %>%
-  filter(TerritoryName == "The Illuminating Company") %>%
-  filter(refRateCode == "Small Commercial") %>%
-  filter(refRateType == "Fixed") %>%
-  filter(ContractTerms %in% c(6, 12, 24))
+  filter(TerritoryName == "The Illuminating Company")
 
-PTC = read_csv("PTC_com.csv")
+
+PTC = read_csv("PTC.csv")
 
 df = PTC %>%
   select(Date, FECEI) %>%
-  mutate(Date = ym(Date)) %>%
+  mutate(Date = mdy(Date)) %>%
   mutate(matchdate = format(Date, "%m/%Y")) %>%
   select(matchdate, FECEI)
 
 AEP = AEP %>%
   mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
 
 AEP = AEP %>% 
   left_join(df)
@@ -266,27 +196,6 @@ df2 = AEP %>%
             q3 = quantile(Price, probs = .75),
             Max = max(Price),
             PTC = mean(FECEI)/100) %>%
-  ungroup()
-
-FECEI.work = df2 %>%
-  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
-  mutate(sso_more_better = df2$`5%` / df2$PTC)
-
-temp = FECEI.work %>% 
-  group_by(ContractTerms) %>%
-  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
-
-temp2 = FECEI.work %>%
-  filter(sso_better == 1) %>%
-  group_by(ContractTerms) %>%
-  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
-
-FECEI.table = data.frame(Contract.Length = temp$ContractTerms,
-                       sso.better = temp$sso.better,
-                       sso.how.better = temp2$how.better)
-
-df2 = df2 %>%
-  group_by(Offer_Date, ContractTerms) %>%
   gather(Offer, Price, Min:PTC) %>%
   filter(Price != 9999)
 
@@ -306,38 +215,36 @@ g = df2 %>%
   theme(strip.background =element_rect(fill="black")) +
   theme(strip.text = element_text(colour = 'white')) +
   xlab("Date") +
-  ylab("kwh") 
+  ylab("kwh") +
+  ggtitle("FE-CEI Residential, With PTC")
 
 
 ggplotly(g)
 
 ```
 
-
-
 # FE-OE
 
 ```{r, fig.height=8, fig.width=12}
 
-AEP = electric %>%
-  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+AEP = test %>%
+  mutate(Offer_Date = substring(test$PublishDate, 1, 10)) %>%
   mutate(Offer_Date = ymd(Offer_Date)) %>%
   mutate(ContractTerms = as.factor(ContractTerms)) %>%
-  filter(TerritoryName == "Ohio Edison") %>%
-  filter(refRateCode == "Small Commercial") %>%
-  filter(refRateType == "Fixed") %>%
-  filter(ContractTerms %in% c(6, 12, 24))
+  filter(TerritoryName == "Ohio Edison")
 
-PTC = read_csv("PTC_com.csv")
+
+PTC = read_csv("PTC.csv")
 
 df = PTC %>%
   select(Date, FEOE) %>%
-  mutate(Date = ym(Date)) %>%
+  mutate(Date = mdy(Date)) %>%
   mutate(matchdate = format(Date, "%m/%Y")) %>%
   select(matchdate, FEOE)
 
 AEP = AEP %>%
   mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
 
 AEP = AEP %>% 
   left_join(df)
@@ -352,27 +259,6 @@ df2 = AEP %>%
             q3 = quantile(Price, probs = .75),
             Max = max(Price),
             PTC = mean(FEOE)/100) %>%
-  ungroup()
-
-FEOE.work = df2 %>%
-  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
-  mutate(sso_more_better = df2$`5%` / df2$PTC)
-
-temp = FEOE.work %>% 
-  group_by(ContractTerms) %>%
-  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
-
-temp2 = FEOE.work %>%
-  filter(sso_better == 1) %>%
-  group_by(ContractTerms) %>%
-  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
-
-FEOE.table = data.frame(Contract.Length = temp$ContractTerms,
-                       sso.better = temp$sso.better,
-                       sso.how.better = temp2$how.better)
-
-df2 = df2 %>%
-  group_by(Offer_Date, ContractTerms) %>%
   gather(Offer, Price, Min:PTC) %>%
   filter(Price != 9999)
 
@@ -392,10 +278,12 @@ g = df2 %>%
   theme(strip.background =element_rect(fill="black")) +
   theme(strip.text = element_text(colour = 'white')) +
   xlab("Date") +
-  ylab("kwh") 
+  ylab("kwh") +
+  ggtitle("FE-OE Residential, With PTC")
 
 
 ggplotly(g)
+
 
 ```
 
@@ -404,25 +292,24 @@ ggplotly(g)
 
 ```{r, fig.height=8, fig.width=12}
 
-AEP = electric %>%
-  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+AEP = test %>%
+  mutate(Offer_Date = substring(test$PublishDate, 1, 10)) %>%
   mutate(Offer_Date = ymd(Offer_Date)) %>%
   mutate(ContractTerms = as.factor(ContractTerms)) %>%
-  filter(TerritoryName == "Toledo Edison") %>%
-  filter(refRateCode == "Small Commercial") %>%
-  filter(refRateType == "Fixed") %>%
-  filter(ContractTerms %in% c(6, 12, 24))
+  filter(TerritoryName == "Toledo Edison")
 
-PTC = read_csv("PTC_com.csv")
+
+PTC = read_csv("PTC.csv")
 
 df = PTC %>%
   select(Date, FETE) %>%
-  mutate(Date = ym(Date)) %>%
+  mutate(Date = mdy(Date)) %>%
   mutate(matchdate = format(Date, "%m/%Y")) %>%
   select(matchdate, FETE)
 
 AEP = AEP %>%
   mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
 
 AEP = AEP %>% 
   left_join(df)
@@ -437,27 +324,6 @@ df2 = AEP %>%
             q3 = quantile(Price, probs = .75),
             Max = max(Price),
             PTC = mean(FETE)/100) %>%
-  ungroup()
-
-FETE.work = df2 %>%
-  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
-  mutate(sso_more_better = df2$`5%` / df2$PTC)
-
-temp = FETE.work %>% 
-  group_by(ContractTerms) %>%
-  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
-
-temp2 = FETE.work %>%
-  filter(sso_better == 1) %>%
-  group_by(ContractTerms) %>%
-  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
-
-FETE.table = data.frame(Contract.Length = temp$ContractTerms,
-                       sso.better = temp$sso.better,
-                       sso.how.better = temp2$how.better)
-
-df2 = df2 %>%
-  group_by(Offer_Date, ContractTerms) %>%
   gather(Offer, Price, Min:PTC) %>%
   filter(Price != 9999)
 
@@ -477,37 +343,36 @@ g = df2 %>%
   theme(strip.background =element_rect(fill="black")) +
   theme(strip.text = element_text(colour = 'white')) +
   xlab("Date") +
-  ylab("kwh") 
+  ylab("kwh") +
+  ggtitle("FE-TE Residential, With PTC")
 
 
 ggplotly(g)
 
 ```
 
-
-# DUKE
+# Duke
 
 ```{r, fig.height=8, fig.width=12}
 
-AEP = electric %>%
-  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+AEP = test %>%
+  mutate(Offer_Date = substring(test$PublishDate, 1, 10)) %>%
   mutate(Offer_Date = ymd(Offer_Date)) %>%
   mutate(ContractTerms = as.factor(ContractTerms)) %>%
-  filter(TerritoryName == "Duke Energy Ohio") %>%
-  filter(refRateCode == "Small Commercial") %>%
-  filter(refRateType == "Fixed") %>%
-  filter(ContractTerms %in% c(6, 12, 24))
+  filter(TerritoryName == "Duke Energy Ohio")
 
-PTC = read_csv("PTC_com.csv")
+
+PTC = read_csv("PTC.csv")
 
 df = PTC %>%
   select(Date, DUKE) %>%
-  mutate(Date = ym(Date)) %>%
+  mutate(Date = mdy(Date)) %>%
   mutate(matchdate = format(Date, "%m/%Y")) %>%
   select(matchdate, DUKE)
 
 AEP = AEP %>%
   mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
 
 AEP = AEP %>% 
   left_join(df)
@@ -522,27 +387,6 @@ df2 = AEP %>%
             q3 = quantile(Price, probs = .75),
             Max = max(Price),
             PTC = mean(DUKE)/100) %>%
-  ungroup()
-
-DUKE.work = df2 %>%
-  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
-  mutate(sso_more_better = df2$`5%` / df2$PTC)
-
-temp = DUKE.work %>% 
-  group_by(ContractTerms) %>%
-  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
-
-temp2 = DUKE.work %>%
-  filter(sso_better == 1) %>%
-  group_by(ContractTerms) %>%
-  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
-
-DUKE.table = data.frame(Contract.Length = temp$ContractTerms,
-                       sso.better = temp$sso.better,
-                       sso.how.better = temp2$how.better)
-
-df2 = df2 %>%
-  group_by(Offer_Date, ContractTerms) %>%
   gather(Offer, Price, Min:PTC) %>%
   filter(Price != 9999)
 
@@ -562,36 +406,36 @@ g = df2 %>%
   theme(strip.background =element_rect(fill="black")) +
   theme(strip.text = element_text(colour = 'white')) +
   xlab("Date") +
-  ylab("kwh") 
+  ylab("kwh") +
+  ggtitle("Duke Residential, With PTC")
 
 
 ggplotly(g)
 
 ```
 
-# DP&L
+# DPL
 
 ```{r, fig.height=8, fig.width=12}
 
-AEP = electric %>%
-  mutate(Offer_Date = substring(electric$PublishDate, 1, 10)) %>%
+AEP = test %>%
+  mutate(Offer_Date = substring(test$PublishDate, 1, 10)) %>%
   mutate(Offer_Date = ymd(Offer_Date)) %>%
   mutate(ContractTerms = as.factor(ContractTerms)) %>%
-  filter(TerritoryName == "Dayton Power & Light") %>%
-  filter(refRateCode == "Small Commercial") %>%
-  filter(refRateType == "Fixed") %>%
-  filter(ContractTerms %in% c(6, 12, 24))
+  filter(TerritoryName == "Dayton Power & Light")
 
-PTC = read_csv("PTC_com.csv")
+
+PTC = read_csv("PTC.csv")
 
 df = PTC %>%
   select(Date, DPL) %>%
-  mutate(Date = ym(Date)) %>%
+  mutate(Date = mdy(Date)) %>%
   mutate(matchdate = format(Date, "%m/%Y")) %>%
   select(matchdate, DPL)
 
 AEP = AEP %>%
   mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
 
 AEP = AEP %>% 
   left_join(df)
@@ -606,27 +450,6 @@ df2 = AEP %>%
             q3 = quantile(Price, probs = .75),
             Max = max(Price),
             PTC = mean(DPL)/100) %>%
-  ungroup()
-
-DPL.work = df2 %>%
-  mutate(sso_better = ifelse(df2$PTC < df2$`5%`, 1, 0)) %>%
-  mutate(sso_more_better = df2$`5%` / df2$PTC)
-
-temp = DPL.work %>% 
-  group_by(ContractTerms) %>%
-  summarise(sso.better =  mean(sso_better, na.rm = TRUE))
-
-temp2 = DPL.work %>%
-  filter(sso_better == 1) %>%
-  group_by(ContractTerms) %>%
-  summarise(how.better = mean(sso_more_better, na.rm = TRUE))
-
-DPL.table = data.frame(Contract.Length = temp$ContractTerms,
-                       sso.better = temp$sso.better,
-                       sso.how.better = temp2$how.better)
-
-df2 = df2 %>%
-  group_by(Offer_Date, ContractTerms) %>%
   gather(Offer, Price, Min:PTC) %>%
   filter(Price != 9999)
 
@@ -646,56 +469,12 @@ g = df2 %>%
   theme(strip.background =element_rect(fill="black")) +
   theme(strip.text = element_text(colour = 'white')) +
   xlab("Date") +
-  ylab("kwh") 
+  ylab("kwh") +
+  ggtitle("Dayton Power and Light Residential, With PTC")
 
 
 ggplotly(g)
 
 ```
-
-# Summary Table 
-
-* What percent of the time was the SSO better than the 5th percentile retail choice offer? (by contract length)
-
-* Given that the offer was better, by what percentage was it better? (by contract length)
-
-```{r}
-
-all.table = rbind(AEPCSP.table,
-                  AEPOP.table,
-                  FECEI.table,
-                  FEOE.table,
-                  FETE.table,
-                  DUKE.table,
-                  DPL.table)
-
-library(scales)
-
-all.table = all.table %>%
-  mutate(sso.how.better = sso.how.better - 1) %>%
-  mutate(sso.better = percent(sso.better, accuracy = .01)) %>%
-  mutate(sso.how.better = percent(sso.how.better, accuracy = .01))
-
-all.table = all.table %>%
-  rename("Contract Length" = Contract.Length) %>%
-  rename("Percent of Days SSO Lower Than 5% Choice" = sso.better) %>%
-  rename("Percent SSO Better on Those Days" = sso.how.better)
-
-
-  
-
-all.table %>%
-  kbl() %>%
-  kable_material(c("striped", "hover")) %>%
-  pack_rows("AEP-CSP", 1, 3) %>%
-  pack_rows("AEP-OE", 4, 6) %>%
-  pack_rows("FE-CEI", 7, 9) %>%
-  pack_rows("FE-OE", 10, 12) %>%
-  pack_rows("FE-TE", 13, 15) %>%
-  pack_rows("DUKE", 16, 18) %>%
-  pack_rows("DP&L", 19, 21)
-
-```
-
 
 

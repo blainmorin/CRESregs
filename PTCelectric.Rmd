@@ -1,0 +1,112 @@
+---
+title: "Price-to-Compare Electric Graphics"
+author: "Blain Morin"
+date: "6/22/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(gridExtra)
+library(kableExtra)
+library(knitr)
+library(lubridate)
+library(plotly)
+library(RSQLite)
+library(RColorBrewer)
+
+```
+
+
+```{r}
+
+conn = dbConnect(RSQLite::SQLite(), "puco.db")
+
+test = dbGetQuery(conn, "SELECT * FROM Responses WHERE ContractTerms in (3, 12, 24) AND refRateType = 'Fixed' and MeasurementText = 'kWh' AND refRateCode = 'Residential' ")
+
+test1 = test %>%
+  mutate(Offer_Date = substring(test$PublishDate, 1, 10)) %>%
+  mutate(Offer_Date = ymd(Offer_Date)) %>%
+  mutate(ContractTerms = as.factor(ContractTerms)) %>%
+  filter(TerritoryName == "American Electric Power")
+
+remove(test)
+
+dbDisconnect(conn)
+
+```
+
+```{r}
+
+load('PTCdate')
+load('AEPCSP')
+
+df = PTCdate %>%
+  mutate(AEPCSP = AEPCSP) %>%
+  mutate(Date = mdy(Date)) %>%
+  mutate(matchdate = format(Date, "%m/%Y")) %>%
+  select(matchdate, AEPCSP)
+
+test1 = test1 %>%
+  mutate(matchdate = format(Offer_Date, "%m/%Y"))
+
+
+test1 = test1 %>% 
+  left_join(df)
+
+```
+
+
+```{r}
+
+test2 = test1 %>%
+  group_by(Offer_Date, ContractTerms) %>%
+  summarize(Min = min(Price),
+            "5%" = quantile(Price, probs = .05),
+            q1 = quantile(Price, probs = .25),
+            Mean = mean(Price),
+            Median = median(Price),
+            q3 = quantile(Price, probs = .75),
+            Max = max(Price),
+            PTC = mean(AEPCSP)/100) %>%
+  gather(Offer, Price, Min:PTC) %>%
+  filter(Price != 9999)
+
+```
+
+```{r, fig.height=8, fig.width=12}
+
+mycolors = brewer.pal(8, name = 'Spectral')
+mycolors[5] = "purple"
+
+test2$Offer = factor(test2$Offer, levels = c("Min", "5%", "q1", "Mean", "PTC", "Median", "q3", "Max"))
+
+g = test2 %>%
+  filter(Price < .1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_line(aes(color = Offer)) +
+  facet_wrap(~ContractTerms) +
+  scale_x_date(date_minor_breaks = "1 year") +
+  scale_color_manual(name = "Offer", values = mycolors) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) +
+  xlab("Date") +
+  ylab("kwh") +
+  ggtitle("AEP Residential, With PTC")
+
+
+ggplotly(g)
+
+```
+
+
+
+You will notice that max value is sometimes less than less than q3 (the 75th percentile)(see the beggining of the 24 month). This is caused some unit issues in the CRES offer data. When making the graph, I set the y axis to cap at .1, which cuts some of the maxes out and causes those areas to look strange. 
+
+
+
+
+

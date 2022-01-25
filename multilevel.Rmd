@@ -1,0 +1,79 @@
+---
+title: "Multilevel?"
+author: "Blain Morin"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, cache = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(RSQLite)
+library(lubridate)
+library(stargazer)
+
+```
+
+* This document looks at differences between territories, contract lengths, and individual CRES providers
+* Not a time series buff, but it may be worth noting that the data are hierarchical: we have offers located in different territories. We also have individual trends for each company. 
+
+
+```{r}
+
+conn = dbConnect(RSQLite::SQLite(), "puco.db")
+
+test = dbGetQuery(conn, "SELECT * FROM Responses WHERE ContractTerms in (3, 12, 24) AND refRateType = 'Fixed' and MeasurementText = 'kWh' AND refRateCode = 'Residential' ")
+
+test1 = test %>%
+  mutate(Offer_Date = substring(test$PublishDate, 1, 10)) %>%
+  mutate(Offer_Date = ymd(Offer_Date)) %>%
+  mutate(ContractTerms = as.factor(ContractTerms)) 
+
+remove(test)
+
+dbDisconnect(conn)
+
+```
+
+
+This plot shows smoothing curves for each territory, the color indicates the contract length. The black line is the overall average across contracts. 
+
+
+```{r}
+
+test1 %>%
+  filter(Price < 1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_smooth(se = F, aes(color = ContractTerms)) +
+  geom_smooth(se = T, method = 'lm',color = 'grey14') +
+  facet_wrap(~TerritoryName) +
+  xlab("Date") +
+  ggtitle("Residential Electric Rates, By Territoy") +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) 
+  
+
+```
+
+
+```{r, fig.height=10, fig.width=10}
+
+test1 %>%
+  filter(Price < 1) %>%
+  ggplot(aes(x = Offer_Date, y = Price)) +
+  geom_smooth(se = F, method = 'lm', aes(color = SupplierCompanyName), alpha = .4) +
+  facet_wrap(~TerritoryName + ContractTerms) +
+  geom_smooth(se = T, method = 'lm',color = 'grey14', size = 1.2) +
+  xlab("Date") +
+  ggtitle("Residential Electric Rates, By Company and Contract Length") +
+  ylim(.03, .08) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="black")) +
+  theme(strip.text = element_text(colour = 'white')) +
+  theme(legend.position = "none")
+
+
+```
+
+The above plot shows lines fit to individual CRES company offers, facetted by territory and contract length. There is hetergeneity in the trends. Some companies do not have many observations. 
